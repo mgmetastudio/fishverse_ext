@@ -1,0 +1,15 @@
+{
+  "canisters": {
+    "fishverse_ext": {
+      "main": "src/ext_erc721/fishverse_ext.mo",
+      "type": "motoko"
+    }
+  },
+  "defaults": {
+    "build": {
+      "args": "",
+      "packtool": ""
+    }
+  },
+  "version": 1
+}
