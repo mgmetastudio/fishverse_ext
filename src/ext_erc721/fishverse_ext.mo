@@ -18,6 +18,7 @@ import Blob "mo:base/Blob";
 import Text "mo:base/Text";
 import Nat16 "mo:base/Nat16";
 import Nat32 "mo:base/Nat32";
+import List "mo:base/List";
 
 shared (install) actor class fishverse_ext(init_minter : Principal) = this {
 
@@ -59,10 +60,23 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
     value : Text 
   };
 
+  type TokenReservation = {
+    tokenType : TokenType;
+    quantity : Nat32;
+  };
+
+  type TokenReservationList = List.List<TokenReservation>;
+
   type MintRequest = {
     to : ExtCore.User;
     metadata : ?Blob;
     tokenType : TokenType;
+  };
+
+  type ReserveRequest = {
+    to : ExtCore.User;
+    tokenType : TokenType;
+    quantity : Nat32;
   };
 
   //HTTP
@@ -78,7 +92,6 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
     headers : [HeaderField];
     body : Blob;
   };
-
 
   private let EXTENSIONS : [Extension] = ["@ext/common", "@ext/allowance", "@ext/nonfungible"];
 
@@ -101,6 +114,9 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
   private stable var _tokenTypeDataState : [(TokenType, TokenTypeData)] = [];
   private var _tokenTypeData : HashMap.HashMap<TokenType, TokenTypeData> = HashMap.fromIter(_tokenTypeDataState.vals(), 0, Nat16.equal, nat16hash);
 
+  private stable var _tokenReservasionState : [(AccountIdentifier, TokenReservationList)] = [];
+  private var _tokenReservasion : HashMap.HashMap<AccountIdentifier, TokenReservationList> = HashMap.fromIter(_tokenReservasionState.vals(), 0, AID.equal, AID.hash);
+
   private stable var _supply : Balance = 0;
   private stable var _minter : Principal = init_minter;
   private stable var _gifter : Principal = Principal.fromText("nraos-xaaaa-aaaah-qadqa-cai");
@@ -115,6 +131,7 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
     _tokenMetadataState := Iter.toArray(_tokenMetadata.entries());
     _tokenTypeState := Iter.toArray(_tokenType.entries());
     _tokenTypeDataState := Iter.toArray(_tokenTypeData.entries());
+    _tokenReservasionState := Iter.toArray(_tokenReservasion.entries());
   };
   system func postupgrade() {
     _registryState := [];
@@ -123,6 +140,7 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
     _tokenMetadataState := [];
     _tokenTypeState := [];
     _tokenTypeDataState := [];
+    _tokenReservasionState := [];
   };
 
   public shared (msg) func initBaseTokenTypes() : async () {
@@ -187,7 +205,7 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
       return ?tokenid;
     } else {
       return null;
-    }
+    };
   };
 
   public shared (msg) func mintNFT(request : MintRequest) : async TokenIndex {
@@ -207,7 +225,82 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
     token;
   };
 
-  public shared(msg) func transfer(request: TransferRequest) : async TransferResponse {
+  public shared (msg) func reserveNFT(request : ReserveRequest) : async () {
+    assert (msg.caller == _minter);
+    assert (_tokenTypeData.get(request.tokenType) != null);
+
+    let receiver = ExtCore.User.toAID(request.to);
+
+    var foundReservation = false;
+    let updateFcn = func(item : TokenReservation) : TokenReservation {
+      if (item.tokenType == request.tokenType) {
+        foundReservation := true;
+        return {
+          tokenType = item.tokenType;
+          quantity = item.quantity + request.quantity;
+        };
+      } else { return item };
+    };
+
+    let tokenReservasion : ?TokenReservationList = _tokenReservasion.get(receiver);
+    switch (tokenReservasion) {
+      case (null) {
+        let newReservationList = List.make<TokenReservation>({
+          quantity = request.quantity;
+          tokenType = request.tokenType;
+        });
+        _tokenReservasion.put(receiver, newReservationList);
+      };
+      case (?tokenReservasion) {
+        var updatedReservationList = List.map<TokenReservation, TokenReservation>(tokenReservasion, updateFcn);
+        if (not foundReservation) {
+          updatedReservationList := List.push<TokenReservation>({
+            quantity = request.quantity;
+            tokenType = request.tokenType;
+          }, updatedReservationList);
+        };
+        _tokenReservasion.put(receiver, updatedReservationList);
+      };
+    };
+  };
+
+  public shared (msg) func mintReservedNFT(tokenType : TokenType) : async TokenIndex {
+    assert (_tokenTypeData.get(tokenType) != null);
+    let caller = msg.caller;
+    let receiver = ExtCore.User.toAID(#principal caller);
+
+    var foundReservation = false;
+    let updateFcn = func(item : TokenReservation) : TokenReservation {
+      if (item.tokenType == tokenType and item.quantity > 0) {
+        foundReservation := true;
+        return {
+          tokenType = item.tokenType;
+          quantity = item.quantity - 1;
+        };
+      } else { return item };
+    };
+
+    let tokenReservasion = _tokenReservasion.get(receiver);
+    switch (tokenReservasion) {
+      case (null) {};
+      case (?tokenReservasion) {
+        let updatedReservationList = List.map<TokenReservation, TokenReservation>(tokenReservasion, updateFcn);
+        if (foundReservation){
+          _tokenReservasion.put(receiver, updatedReservationList);
+        }
+      };
+    };
+    assert (foundReservation);
+
+    let token = _nextTokenId;
+    _registry.put(token, receiver);
+    _tokenType.put(token, tokenType);
+    _supply := _supply + 1;
+    _nextTokenId := _nextTokenId + 1;
+    token;
+  };
+
+  public shared (msg) func transfer(request : TransferRequest) : async TransferResponse {
     if (request.amount != 1) {
       return #err(#Other("Must use amount of 1"));
     };
@@ -388,8 +481,8 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
         return #err(#InvalidToken(token));
       };
     };
-  };  
-  
+  };
+
   public query func tokenData(token : TokenIdentifier) : async Result.Result<TokenTypeData, CommonError> {
     if (ExtCore.TokenIdentifier.isPrincipal(token, Principal.fromActor(this)) == false) {
       return #err(#InvalidToken(token));
@@ -410,8 +503,8 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
         return #err(#InvalidToken(token));
       };
     };
-  };  
-  
+  };
+
   public query func tokenType(token : TokenIdentifier) : async Result.Result<Nat16, CommonError> {
     if (ExtCore.TokenIdentifier.isPrincipal(token, Principal.fromActor(this)) == false) {
       return #err(#InvalidToken(token));
@@ -421,7 +514,7 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
     switch (tokenType) {
       case (?tokenType) {
           return #ok (tokenType);
-        };
+      };
       case (_) {
         return #err(#InvalidToken(token));
       };
@@ -522,7 +615,7 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
     switch (_tokenTypeData.get(tokenType)) {
       case (null) return;
       case (?tokenTypeData) {
-        await setTokenTypeDataInner(tokenType, tokenTypeData.name, image, tokenTypeData.rarity, tokenTypeData.category, tokenTypeData.details, tokenTypeData.video, tokenTypeData.attributes)
+        await setTokenTypeDataInner(tokenType, tokenTypeData.name, image, tokenTypeData.rarity, tokenTypeData.category, tokenTypeData.details, tokenTypeData.video, tokenTypeData.attributes);
       };
     };
   };
