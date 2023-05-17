@@ -8,6 +8,7 @@ import Principal "mo:base/Principal";
 import Result "mo:base/Result";
 import Array "mo:base/Array";
 import Iter "mo:base/Iter";
+import Int "mo:base/Int";
 import AID "util/AccountIdentifier";
 import ExtCore "ext/Core";
 import ExtCommon "ext/Common";
@@ -16,6 +17,7 @@ import ExtNonFungible "ext/NonFungible";
 import Option "mo:base/Option";
 import Blob "mo:base/Blob";
 import Text "mo:base/Text";
+import Nat8 "mo:base/Nat8";
 import Nat16 "mo:base/Nat16";
 import Nat32 "mo:base/Nat32";
 import List "mo:base/List";
@@ -65,7 +67,15 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
     quantity : Nat32;
   };
 
+  type TokenWalletRecord = {
+    tokenId : TokenIndex;
+    tokenType : ?TokenType;
+  };
+
+
   type TokenReservationList = List.List<TokenReservation>;
+
+  type OwnerTokenList = List.List<TokenIndex>;
 
   type MintRequest = {
     to : ExtCore.User;
@@ -98,6 +108,9 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
   //State work
   private stable var _registryState : [(TokenIndex, AccountIdentifier)] = [];
   private var _registry : HashMap.HashMap<TokenIndex, AccountIdentifier> = HashMap.fromIter(_registryState.vals(), 0, ExtCore.TokenIndex.equal, ExtCore.TokenIndex.hash);
+
+  private stable var _ownerTokenState : [(AccountIdentifier, OwnerTokenList)] = [];
+  private var _ownerTokens : HashMap.HashMap<AccountIdentifier, OwnerTokenList> = HashMap.fromIter(_ownerTokenState.vals(), 0, AID.equal, AID.hash);
 
   private stable var _buyersState : [(AccountIdentifier, [TokenIndex])] = [];
   private var _buyers : HashMap.HashMap<AccountIdentifier, [TokenIndex]> = HashMap.fromIter(_buyersState.vals(), 0, AID.equal, AID.hash);
@@ -145,29 +158,29 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
 
   public shared (msg) func initBaseTokenTypes() : async () {
     assert (msg.caller == _minter);
-    await setTokenTypeDataInner(1, "Fishing License", "", "Common", "Season pass", "Season pass", null, null);
-    await setTokenTypeDataInner(2, "MEGAFIN PRO Silver", "", "Rare", "Rods", "Salt", null, null);
-    await setTokenTypeDataInner(3, "MEGAFIN PRO Gold", "", "Epic", "Rods", "Salt", null, null);
-    await setTokenTypeDataInner(4, "MEGAFIN PRO Rose Gold", "", "Legendary", "Rods", "Salt", null, null);
-    await setTokenTypeDataInner(5, "LIGHT SPIN Silver", "", "Common", "Rods", "Mix", null, null);
-    await setTokenTypeDataInner(6, "LIGHT SPIN Mate Black", "", "Rare", "Rods", "Mix", null, null);
-    await setTokenTypeDataInner(7, "LIGHT SPIN Red Black", "", "Rare", "Rods", "Mix", null, null);
-    await setTokenTypeDataInner(8, "LIGHT SPIN Red", "", "Epic", "Rods", "Mix", null, null);
-    await setTokenTypeDataInner(9, "LIGHT SPIN Silver gold", "", "Legendary", "Rods", "Mix", null, null);
-    await setTokenTypeDataInner(10, "FRESHFLY MAX Mate Black", "", "Common", "Rods", "Fresh", null, null);
-    await setTokenTypeDataInner(11, "FRESHFLY MAX Mate Blue", "", "Rare", "Rods", "Fresh", null, null);
-    await setTokenTypeDataInner(12, "FRESHFLY MAX Mate Purple", "", "Epic", "Rods", "Fresh", null, null);
-    await setTokenTypeDataInner(13, "FISHA STEALTH KAYAK", "", "Rare", "Boat", "Boat", null, null);
-    await setTokenTypeDataInner(14, "RUBBER DINGHY", "", "Epic", "Boat", "Boat", null, null);
-    await setTokenTypeDataInner(15, "SEA MASTER", "", "Legendary", "Boat", "Boat", null, null);
-    await setTokenTypeDataInner(16, "Dark Reel", "", "Common", "Reel", "Reel", null, null);
-    await setTokenTypeDataInner(17, "Purple Reel", "", "Rare", "Reel", "Reel", null, null);
-    await setTokenTypeDataInner(18, "Echolot", "", "Legendary", "Equipment", "Extra equipment", null, null);
+    await setTokenTypeDataInner(1, "Fishing License", "https://fisher.thefishverse.com/images/content/1.jpg", "Common", "Season pass", "Season pass", null, null);
+    await setTokenTypeDataInner(2, "MEGAFIN PRO Silver", "https://fisher.thefishverse.com/images/content/2.jpg", "Rare", "Rods", "Salt", null, null);
+    await setTokenTypeDataInner(3, "MEGAFIN PRO Gold", "https://fisher.thefishverse.com/images/content/3.jpg", "Epic", "Rods", "Salt", null, null);
+    await setTokenTypeDataInner(4, "MEGAFIN PRO Rose Gold", "https://fisher.thefishverse.com/images/content/4.jpg", "Legendary", "Rods", "Salt", null, null);
+    await setTokenTypeDataInner(5, "LIGHT SPIN Silver", "https://fisher.thefishverse.com/images/content/5.jpg", "Common", "Rods", "Mix", null, null);
+    await setTokenTypeDataInner(6, "LIGHT SPIN Mate Black", "https://fisher.thefishverse.com/images/content/6.jpg", "Rare", "Rods", "Mix", null, null);
+    await setTokenTypeDataInner(7, "LIGHT SPIN Red Black", "https://fisher.thefishverse.com/images/content/7.jpg", "Rare", "Rods", "Mix", null, null);
+    await setTokenTypeDataInner(8, "LIGHT SPIN Red", "https://fisher.thefishverse.com/images/content/8.jpg", "Epic", "Rods", "Mix", null, null);
+    await setTokenTypeDataInner(9, "LIGHT SPIN Silver gold", "https://fisher.thefishverse.com/images/content/9.jpg", "Legendary", "Rods", "Mix", null, null);
+    await setTokenTypeDataInner(10, "FRESHFLY MAX Mate Black", "https://fisher.thefishverse.com/images/content/10.jpg", "Common", "Rods", "Fresh", null, null);
+    await setTokenTypeDataInner(11, "FRESHFLY MAX Mate Blue", "https://fisher.thefishverse.com/images/content/11.jpg", "Rare", "Rods", "Fresh", null, null);
+    await setTokenTypeDataInner(12, "FRESHFLY MAX Mate Purple", "https://fisher.thefishverse.com/images/content/12.jpg", "Epic", "Rods", "Fresh", null, null);
+    await setTokenTypeDataInner(13, "FISHA STEALTH KAYAK", "https://fisher.thefishverse.com/images/content/13.jpg", "Rare", "Boat", "Boat", null, null);
+    await setTokenTypeDataInner(14, "RUBBER DINGHY", "https://fisher.thefishverse.com/images/content/14.jpg", "Epic", "Boat", "Boat", null, null);
+    await setTokenTypeDataInner(15, "SEA MASTER", "https://fisher.thefishverse.com/images/content/15.jpg", "Legendary", "Boat", "Boat", null, null);
+    await setTokenTypeDataInner(16, "Dark Reel", "https://fisher.thefishverse.com/images/content/16.jpg", "Common", "Reel", "Reel", null, null);
+    await setTokenTypeDataInner(17, "Purple Reel", "https://fisher.thefishverse.com/images/content/17.jpg", "Rare", "Reel", "Reel", null, null);
+    await setTokenTypeDataInner(18, "Echolot", "https://fisher.thefishverse.com/images/content/18.jpg", "Legendary", "Equipment", "Extra equipment", null, null);
   };
 
   public shared(msg) func disribute(user : User) : async () {
-		assert(msg.caller == _minter);
-		assert(_nextToSell < _nextTokenId);
+    assert(msg.caller == _minter);
+    assert(_nextToSell < _nextTokenId);
     let bearer = ExtCore.User.toAID(user);
     _registry.put(_nextToSell, bearer);
 
@@ -182,14 +195,14 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
     _nextToSell := _nextToSell + 1;
   };
 
-	public shared(msg) func setMinter(minter : Principal) : async () {
-		assert(msg.caller == _minter);
+  public shared(msg) func setMinter(minter : Principal) : async () {
+    assert(msg.caller == _minter);
     _minter := minter;
   };
 
   public shared(msg) func freeGift(bearer : AccountIdentifier) : async ?TokenIndex {
-		assert(msg.caller == _gifter);
-		assert(_nextToSell < _nextTokenId);
+    assert(msg.caller == _gifter);
+    assert(_nextToSell < _nextTokenId);
     if (_nextToSell < 5000) {
       let tokenid = _nextToSell + 1000;
       _registry.put(tokenid, bearer);
@@ -222,6 +235,7 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
     _tokenType.put(token, request.tokenType);
     _supply := _supply + 1;
     _nextTokenId := _nextTokenId + 1;
+    appendToOwnerTokenList(receiver, token);
     token;
   };
 
@@ -242,7 +256,7 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
       } else { return item };
     };
 
-    let tokenReservasion : ?TokenReservationList = _tokenReservasion.get(receiver);
+    let tokenReservasion = _tokenReservasion.get(receiver);
     switch (tokenReservasion) {
       case (null) {
         let newReservationList = List.make<TokenReservation>({
@@ -297,6 +311,7 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
     _tokenType.put(token, tokenType);
     _supply := _supply + 1;
     _nextTokenId := _nextTokenId + 1;
+    appendToOwnerTokenList(receiver, token);
     token;
   };
 
@@ -314,13 +329,13 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
 
     switch (_registry.get(token)) {
       case (?token_owner) {
-				if(AID.equal(owner, token_owner) == false) {
+        if(AID.equal(owner, token_owner) == false) {
           return #err(#Unauthorized(owner));
         };
         if (AID.equal(owner, spender) == false) {
           switch (_allowances.get(token)) {
             case (?token_spender) {
-							if(Principal.equal(msg.caller, token_spender) == false) {								
+              if(Principal.equal(msg.caller, token_spender) == false) {               
                 return #err(#Unauthorized(spender));
               };
             };
@@ -331,6 +346,8 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
         };
         _allowances.delete(token);
         _registry.put(token, receiver);
+        removeFromOwnerTokenList(owner, token);
+        appendToOwnerTokenList(receiver, token);
         return #ok(request.amount);
       };
       case (_) {
@@ -347,7 +364,7 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
     let owner = AID.fromPrincipal(msg.caller, request.subaccount);
     switch (_registry.get(token)) {
       case (?token_owner) {
-				if(AID.equal(owner, token_owner) == false) {
+        if(AID.equal(owner, token_owner) == false) {
           return;
         };
         _allowances.put(token, request.spender);
@@ -523,7 +540,7 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
 
   //Frontend
   public query func http_request(request : HttpRequest) : async HttpResponse {
-    switch(getTokenData(getParam(request.url, "tokenid"))) {
+    switch(getTokenMetadata(getParam(request.url, "tokenid"))) {
       case (?svgdata) {
         return {
           status_code = 200;
@@ -546,7 +563,7 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
     };
   };
 
-  func getTokenData(tokenid : ?Text) : ?[Nat8] {
+  func getTokenMetadata(tokenid : ?Text) : ?[Nat8] {
     switch (tokenid) {
       case (?token) {
         if (ExtCore.TokenIdentifier.isPrincipal(token, Principal.fromActor(this)) == false) {
@@ -618,6 +635,81 @@ shared (install) actor class fishverse_ext(init_minter : Principal) = this {
         await setTokenTypeDataInner(tokenType, tokenTypeData.name, image, tokenTypeData.rarity, tokenTypeData.category, tokenTypeData.details, tokenTypeData.video, tokenTypeData.attributes);
       };
     };
+  };
+
+  public shared(msg) func walletOfOwner() : async [TokenWalletRecord] {
+    let aid = AID.fromPrincipal(msg.caller, null);
+    let ownerTokens = _ownerTokens.get(aid);
+
+     let retrieveTokenType = func(tokenid : TokenIndex) : TokenWalletRecord {
+      return {
+          tokenId = tokenid;
+          tokenType = _tokenType.get(tokenid);
+      }
+    };
+
+    switch (ownerTokens) {
+      case (?ownerTokens) {
+        var updatedReservationList = List.map<TokenIndex, TokenWalletRecord>(ownerTokens, retrieveTokenType);
+        return List.toArray(updatedReservationList);
+      };
+      case (_) {
+        return [];
+      };
+    };
+  };
+
+  public shared(msg) func reservedWalletOfOwner() : async [TokenReservation] {
+    let aid = AID.fromPrincipal(msg.caller, null);
+    let tokenReservasions = _tokenReservasion.get(aid);
+    switch (tokenReservasions) {
+      case (?tokenReservasions) {
+        return List.toArray(tokenReservasions);
+      };
+      case (_) {
+        return [];
+      };
+    };
+  };
+
+  func appendToOwnerTokenList(owner: AccountIdentifier, tokenId : Nat32) {
+      let ownerTokens = _ownerTokens.get(owner);
+      switch (ownerTokens) {
+        case (?ownerTokens) {
+          _ownerTokens.put(owner, List.push<TokenIndex>(tokenId, ownerTokens));
+        };
+        case (null) {
+          let newOwnerTokensList = List.make<TokenIndex>(tokenId);
+          _ownerTokens.put(owner, newOwnerTokensList);
+        };
+      };
+  };
+
+  func removeFromOwnerTokenList(owner: AccountIdentifier, tokenId : Nat32) {
+      let ownerTokens = _ownerTokens.get(owner);
+      switch (ownerTokens) {
+        case (?ownerTokens) {
+          let updatedOwnerTokensList = List.filter<TokenIndex>(ownerTokens, func n { n != tokenId });
+          _ownerTokens.put(owner, updatedOwnerTokensList);
+        };
+        case (null) {
+          return;
+        };
+      };
+  };
+
+  public query func tokenIdentifier(index: Nat32) : async Text {
+    var identifier : [Nat8] = [10, 116, 105, 100]; //b"\x0Atid"
+    var containerPrincipal = Principal.fromActor(this);
+    identifier := Array.append(identifier, Blob.toArray(Principal.toBlob(containerPrincipal)));
+    var rest : Nat32 = index;
+    for (i in Iter.revRange(3, 0)) {
+      let power2 = Nat32.fromNat(Int.abs(Int.pow(2, (i * 8))));
+      let val : Nat32 = rest / power2;
+      identifier := Array.append(identifier, [Nat8.fromNat(Nat32.toNat(val))]);
+      rest := rest - (val * power2);
+    };
+    return Principal.toText(Principal.fromBlob(Blob.fromArray(identifier)));
   };
 
   //Internal cycle management - good general case
